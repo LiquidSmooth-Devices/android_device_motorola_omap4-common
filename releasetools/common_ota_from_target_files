@@ -61,7 +61,7 @@ Usage:  ota_from_target_files [flags] input_target_files output_ota_package
 
   --override_prop <boolean>
       Override build.prop items with custom vendor init.
-      Enabled when TARGET_INIT_VENDOR_LIB is defined in BoardConfig
+      Enabled when TARGET_UNIFIED_DEVICE is defined in BoardConfig
 
 """
 
@@ -331,10 +331,10 @@ def SignOutput(temp_zip_name, output_zip_name):
 
 def AppendAssertions(script, info_dict):
   if OPTIONS.override_device == "auto":
-    if OPTIONS.override_prop == "false":
-      device = GetBuildProp("ro.product.device", info_dict)
-    else:
+    if OPTIONS.override_prop:
       device = GetBuildProp("ro.build.product", info_dict)
+    else:
+      device = GetBuildProp("ro.product.device", info_dict)
   else:
     device = OPTIONS.override_device
 #  script.AssertDevice(device)
@@ -400,18 +400,18 @@ def WriteFullOTAPackage(input_zip, output_zip):
   # change very often.
   script = edify_generator.EdifyGenerator(3, OPTIONS.info_dict)
 
-  if OPTIONS.override_prop == "false":
-     metadata = {"post-build": GetBuildProp("ro.build.fingerprint",
-                                            OPTIONS.info_dict),
-                 "pre-device": GetBuildProp("ro.product.device",
-                                            OPTIONS.info_dict),
-                 "post-timestamp": GetBuildProp("ro.build.date.utc",
-                                                OPTIONS.info_dict),
-                 }
+  if OPTIONS.override_prop:
+    metadata = {"post-timestamp": GetBuildProp("ro.build.date.utc",
+                                               OPTIONS.info_dict),
+                }
   else:
-     metadata = {"post-timestamp": GetBuildProp("ro.build.date.utc",
-                                                OPTIONS.info_dict),
-                 }
+    metadata = {"post-build": GetBuildProp("ro.build.fingerprint",
+                                           OPTIONS.info_dict),
+                "pre-device": GetBuildProp("ro.product.device",
+                                           OPTIONS.info_dict),
+                "post-timestamp": GetBuildProp("ro.build.date.utc",
+                                               OPTIONS.info_dict),
+                }
 
   device_specific = common.DeviceSpecificParams(
       input_zip=input_zip,
@@ -430,6 +430,13 @@ def WriteFullOTAPackage(input_zip, output_zip):
   AppendAssertions(script, OPTIONS.info_dict)
   device_specific.FullOTA_Assertions()
   device_specific.FullOTA_InstallBegin()
+
+  if OPTIONS.backuptool:
+    script.Mount("/system")
+    script.RunBackup("backup")
+    script.Unmount("/system")
+
+  script.ShowProgress(0.5, 0)
 
   if OPTIONS.wipe_user_data:
     script.FormatPartition("/data")
@@ -477,10 +484,14 @@ def WriteFullOTAPackage(input_zip, output_zip):
 #  common.ZipWriteStr(output_zip, "boot.img", boot_img.data)
   script.ShowProgress(0.2, 0)
 
+  if OPTIONS.backuptool:
+    script.ShowProgress(0.2, 10)
+    script.RunBackup("restore")
+
+  script.ShowProgress(0.2, 10)
 #  script.WriteRawImage("/boot", "boot.img")
 
   script.ShowProgress(0.1, 0)
-  script.Print("Installation Completed!")
   device_specific.FullOTA_InstallEnd()
 
   if OPTIONS.extra_script is not None:
@@ -532,16 +543,17 @@ def WriteIncrementalOTAPackage(target_zip, source_zip, output_zip):
   script = edify_generator.EdifyGenerator(source_version,
                                           OPTIONS.target_info_dict)
 
-  if OPTIONS.override_prop == "false":
+  if OPTIONS.override_prop:
+    metadata = {"post-timestamp": GetBuildProp("ro.build.date.utc",
+                                               OPTIONS.target_info_dict),
+                }
+  else:
     metadata = {"pre-device": GetBuildProp("ro.product.device",
                                            OPTIONS.source_info_dict),
                 "post-timestamp": GetBuildProp("ro.build.date.utc",
                                                OPTIONS.target_info_dict),
                 }
-  else:
-    metadata = {"post-timestamp": GetBuildProp("ro.build.date.utc",
-                                               OPTIONS.target_info_dict),
-                }
+
   device_specific = common.DeviceSpecificParams(
       source_zip=source_zip,
       source_version=source_version,
@@ -593,14 +605,14 @@ def WriteIncrementalOTAPackage(target_zip, source_zip, output_zip):
       patch_list.append((tf.name, tf, sf, tf.size, common.sha1(d).hexdigest()))
       largest_source_size = max(largest_source_size, sf.size)
 
-  if OPTIONS.override_prop == "false":
-     source_fp = GetBuildProp("ro.build.fingerprint", OPTIONS.source_info_dict)
-     target_fp = GetBuildProp("ro.build.fingerprint", OPTIONS.target_info_dict)
-     metadata["pre-build"] = source_fp
-     metadata["post-build"] = target_fp
+  if not OPTIONS.override_prop:
+    source_fp = GetBuildProp("ro.build.fingerprint", OPTIONS.source_info_dict)
+    target_fp = GetBuildProp("ro.build.fingerprint", OPTIONS.target_info_dict)
+    metadata["pre-build"] = source_fp
+    metadata["post-build"] = target_fp
 
-  script.Mount("/system")
-  script.AssertSomeFingerprint(source_fp, target_fp)
+    script.Mount("/system")
+    script.AssertSomeFingerprint(source_fp, target_fp)
 
   source_boot = common.GetBootableImage(
       "/tmp/boot.img", "boot.img", OPTIONS.source_tmp, "BOOT",
@@ -821,6 +833,8 @@ def main(argv):
         OPTIONS.aslr_mode = False
     elif o in ("--worker_threads"):
       OPTIONS.worker_threads = int(a)
+    elif o in ("--backup"):
+      OPTIONS.backuptool = bool(a.lower() == 'true')
     elif o in ("--override_device"):
       OPTIONS.override_device = a
     elif o in ("--override_prop"):
@@ -839,6 +853,7 @@ def main(argv):
                                               "extra_script=",
                                               "worker_threads=",
                                               "aslr_mode=",
+                                              "backup=",
                                               "override_device=",
                                               "override_prop="],
                              extra_option_handler=option_handler)
