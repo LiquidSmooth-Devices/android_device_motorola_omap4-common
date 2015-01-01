@@ -46,6 +46,10 @@ BOARD_USE_TI_ENHANCED_DOMX := true
 # inherit from the proprietary version
 -include vendor/motorola/omap4-common/BoardConfigVendor.mk
 
+# Liquid stuff
+LIQUID_CHANGELOG := true
+LIQUIFY := true
+
 # Processor
 TARGET_NO_BOOTLOADER := true
 TARGET_BOARD_PLATFORM := omap4
