@@ -117,6 +117,11 @@ class EdifyGenerator(object):
     commands instead of by time."""
     self.script.append("show_progress(%f, %d);" % (frac, int(dur)))
 
+  def FlashSuperSU(self):
+    self.script.append('package_extract_dir("supersu", "/tmp/supersu");')
+    self.script.append('run_program("/sbin/busybox", "unzip", "/tmp/supersu/supersu.zip", "META-INF/com/google/android/*", "-d", "/tmp/supersu");')
+    self.script.append('run_program("/sbin/busybox", "sh", "/tmp/supersu/META-INF/com/google/android/update-binary", "dummy", "1", "/tmp/supersu/supersu.zip");')
+
   def SetProgress(self, frac):
     """Set the position of the progress bar within the chunk defined
     by the most recent ShowProgress call.  'frac' should be in
